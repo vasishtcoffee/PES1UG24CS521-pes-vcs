@@ -98,16 +98,13 @@ int index_status(const Index *index) {
     return 0;
 }
 
-// ─── COMMIT #1 IMPLEMENTATION ───────────────────────────────────────────────
+// ─── IMPLEMENTED ─────────────────────────────────────────────────────────────
 
 int index_load(Index *index) {
     index->count = 0;
 
     FILE *f = fopen(".pes/index", "r");
-    if (!f) {
-        // no index file = empty index
-        return 0;
-    }
+    if (!f) return 0;
 
     while (!feof(f)) {
         if (index->count >= MAX_INDEX_ENTRIES) break;
@@ -137,12 +134,44 @@ int index_load(Index *index) {
     return 0;
 }
 
-// ─── TODO NEXT ───────────────────────────────────────────────────────────────
+// 🔥 SORT HELPER
+static int compare_index_entries(const void *a, const void *b) {
+    return strcmp(((const IndexEntry *)a)->path,
+                  ((const IndexEntry *)b)->path);
+}
 
 int index_save(const Index *index) {
-    (void)index;
-    return -1;
+    // make sorted copy
+    Index sorted = *index;
+    qsort(sorted.entries, sorted.count, sizeof(IndexEntry), compare_index_entries);
+
+    FILE *f = fopen(".pes/index.tmp", "w");
+    if (!f) return -1;
+
+    for (int i = 0; i < sorted.count; i++) {
+        char hex[HASH_HEX_SIZE + 1];
+        hash_to_hex(&sorted.entries[i].hash, hex);
+
+        fprintf(f, "%o %s %ld %ld %s\n",
+                sorted.entries[i].mode,
+                hex,
+                sorted.entries[i].mtime_sec,
+                sorted.entries[i].size,
+                sorted.entries[i].path);
+    }
+
+    fflush(f);
+    fsync(fileno(f));
+    fclose(f);
+
+    if (rename(".pes/index.tmp", ".pes/index") != 0) {
+        return -1;
+    }
+
+    return 0;
 }
+
+// ─── TODO NEXT ───────────────────────────────────────────────────────────────
 
 int index_add(Index *index, const char *path) {
     (void)index; (void)path;
