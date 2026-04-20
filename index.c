@@ -35,91 +35,106 @@ int index_remove(Index *index, const char *path) {
     return -1;
 }
 
+// ─── STATUS ──────────────────────────────────────────────────────────────────
+
 int index_status(const Index *index) {
     printf("Staged changes:\n");
-    int staged_count = 0;
-    for (int i = 0; i < index->count; i++) {
-        printf("  staged:     %s\n", index->entries[i].path);
-        staged_count++;
+    if (index->count == 0) {
+        printf("  (nothing to show)\n\n");
+    } else {
+        for (int i = 0; i < index->count; i++) {
+            printf("  staged:     %s\n", index->entries[i].path);
+        }
+        printf("\n");
     }
-    if (staged_count == 0) printf("  (nothing to show)\n");
-    printf("\n");
 
     printf("Unstaged changes:\n");
-    int unstaged_count = 0;
+    int unstaged = 0;
+
     for (int i = 0; i < index->count; i++) {
         struct stat st;
         if (stat(index->entries[i].path, &st) != 0) {
             printf("  deleted:    %s\n", index->entries[i].path);
-            unstaged_count++;
+            unstaged++;
         } else {
-            if (st.st_mtime != (time_t)index->entries[i].mtime_sec || st.st_size != (off_t)index->entries[i].size) {
+            if (st.st_mtime != (time_t)index->entries[i].mtime_sec ||
+                st.st_size != (off_t)index->entries[i].size) {
                 printf("  modified:   %s\n", index->entries[i].path);
-                unstaged_count++;
+                unstaged++;
             }
         }
     }
-    if (unstaged_count == 0) printf("  (nothing to show)\n");
+
+    if (unstaged == 0) printf("  (nothing to show)\n");
     printf("\n");
 
     printf("Untracked files:\n");
-    int untracked_count = 0;
+    int untracked = 0;
+
     DIR *dir = opendir(".");
     if (dir) {
         struct dirent *ent;
         while ((ent = readdir(dir)) != NULL) {
-            if (strcmp(ent->d_name, ".") == 0 || strcmp(ent->d_name, "..") == 0) continue;
-            if (strcmp(ent->d_name, ".pes") == 0) continue;
-            if (strcmp(ent->d_name, "pes") == 0) continue;
-            if (strstr(ent->d_name, ".o") != NULL) continue;
+            if (strcmp(ent->d_name, ".") == 0 ||
+                strcmp(ent->d_name, "..") == 0 ||
+                strcmp(ent->d_name, ".pes") == 0 ||
+                strcmp(ent->d_name, "pes") == 0)
+                continue;
 
-            int is_tracked = 0;
+            int tracked = 0;
             for (int i = 0; i < index->count; i++) {
                 if (strcmp(index->entries[i].path, ent->d_name) == 0) {
-                    is_tracked = 1;
+                    tracked = 1;
                     break;
                 }
             }
 
-            if (!is_tracked) {
+            if (!tracked) {
                 struct stat st;
-                stat(ent->d_name, &st);
-                if (S_ISREG(st.st_mode)) {
+                if (stat(ent->d_name, &st) == 0 && S_ISREG(st.st_mode)) {
                     printf("  untracked:  %s\n", ent->d_name);
-                    untracked_count++;
+                    untracked++;
                 }
             }
         }
         closedir(dir);
     }
-    if (untracked_count == 0) printf("  (nothing to show)\n");
+
+    if (untracked == 0) printf("  (nothing to show)\n");
     printf("\n");
 
     return 0;
 }
 
-// ─── LOAD ────────────────────────────────────────────────────────────────────
+// ─── LOAD (FIXED) ────────────────────────────────────────────────────────────
 
 int index_load(Index *index) {
     index->count = 0;
 
     FILE *f = fopen(".pes/index", "r");
-    if (!f) return 0;
+    if (!f) {
+        // no index file → empty index
+        return 0;
+    }
 
-    while (!feof(f)) {
+    while (1) {
         if (index->count >= MAX_INDEX_ENTRIES) break;
 
         IndexEntry *e = &index->entries[index->count];
         char hash_hex[HASH_HEX_SIZE + 1];
 
-        int ret = fscanf(f, "%o %64s %ld %ld %255s\n",
+        int ret = fscanf(f, "%o %64s %ld %ld %255s",
                          &e->mode,
                          hash_hex,
                          &e->mtime_sec,
                          &e->size,
                          e->path);
 
-        if (ret != 5) break;
+        if (ret == EOF) break;
+        if (ret != 5) {
+            fclose(f);
+            return -1;
+        }
 
         if (hex_to_hash(hash_hex, &e->hash) != 0) {
             fclose(f);
