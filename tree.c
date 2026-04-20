@@ -2,7 +2,7 @@
 
 #include "tree.h"
 #include "index.h"
-#include "pes.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -16,7 +16,9 @@
 #define MODE_DIR       0040000
 
 // ─── PROVIDED ───────────────────────────────────────────────────────────────
+#include "pes.h"
 
+int object_write(ObjectType type, const void *data, size_t len, ObjectID *id_out);
 uint32_t get_file_mode(const char *path) {
     struct stat st;
     if (lstat(path, &st) != 0) return 0;
