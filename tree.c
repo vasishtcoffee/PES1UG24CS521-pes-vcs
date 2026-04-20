@@ -92,7 +92,7 @@ int tree_serialize(const Tree *tree, void **data_out, size_t *len_out) {
     return 0;
 }
 
-// ─── COMMIT #1 IMPLEMENTATION ───────────────────────────────────────────────
+// ─── COMMIT #2 IMPLEMENTATION ───────────────────────────────────────────────
 
 int tree_from_index(ObjectID *id_out) {
     Index idx;
@@ -102,11 +102,24 @@ int tree_from_index(ObjectID *id_out) {
         return -1;
     }
 
-    // Step 2: initialize empty tree
     Tree tree;
     tree.count = 0;
 
-    // TODO: next commit will populate tree entries
+    // Step 2: populate tree entries (flat structure)
+    for (int i = 0; i < idx.count; i++) {
+        if (tree.count >= MAX_TREE_ENTRIES) return -1;
+
+        TreeEntry *e = &tree.entries[tree.count];
+
+        strncpy(e->name, idx.entries[i].path, sizeof(e->name));
+        e->name[sizeof(e->name) - 1] = '\0';
+
+        e->mode = MODE_FILE;
+
+        e->hash = idx.entries[i].hash;
+
+        tree.count++;
+    }
 
     (void)id_out;
     return 0;
