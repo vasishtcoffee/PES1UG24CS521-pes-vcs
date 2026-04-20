@@ -69,8 +69,10 @@ int object_write(ObjectType type, const void *data, size_t len, ObjectID *id_out
     memcpy(full_obj, header, header_len);
     memcpy(full_obj + header_len, data, len);
 
+    // hash
     compute_hash(full_obj, total_size, id_out);
 
+    // dedup
     if (object_exists(id_out)) {
         free(full_obj);
         return 0;
@@ -90,7 +92,7 @@ int object_write(ObjectType type, const void *data, size_t len, ObjectID *id_out
     }
     *last_slash = '\0';
 
-    mkdir(dir, 0755);
+    mkdir(dir, 0755); // ok if exists
 
     // temp file
     char temp_path[512];
@@ -102,10 +104,16 @@ int object_write(ObjectType type, const void *data, size_t len, ObjectID *id_out
         return -1;
     }
 
-    if (write(fd, full_obj, total_size) != (ssize_t)total_size) {
-        close(fd);
-        free(full_obj);
-        return -1;
+    // SAFE WRITE (fix)
+    ssize_t written = 0;
+    while (written < (ssize_t)total_size) {
+        ssize_t w = write(fd, full_obj + written, total_size - written);
+        if (w <= 0) {
+            close(fd);
+            free(full_obj);
+            return -1;
+        }
+        written += w;
     }
 
     fsync(fd);
@@ -135,7 +143,12 @@ int object_read(const ObjectID *id, ObjectType *type_out, void **data_out, size_
     if (!f) return -1;
 
     fseek(f, 0, SEEK_END);
-    size_t size = ftell(f);
+    long fsize = ftell(f);
+    if (fsize < 0) {
+        fclose(f);
+        return -1;
+    }
+    size_t size = (size_t)fsize;
     rewind(f);
 
     char *buffer = malloc(size);
@@ -144,7 +157,12 @@ int object_read(const ObjectID *id, ObjectType *type_out, void **data_out, size_
         return -1;
     }
 
-    fread(buffer, 1, size, f);
+    // SAFE READ (fix)
+    if (fread(buffer, 1, size, f) != size) {
+        fclose(f);
+        free(buffer);
+        return -1;
+    }
     fclose(f);
 
     // verify hash
@@ -174,6 +192,7 @@ int object_read(const ObjectID *id, ObjectType *type_out, void **data_out, size_
     }
 
     *len_out = size - header_len;
+
     *data_out = malloc(*len_out);
     if (!*data_out) {
         free(buffer);
