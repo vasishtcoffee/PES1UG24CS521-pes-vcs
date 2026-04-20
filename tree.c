@@ -92,7 +92,7 @@ int tree_serialize(const Tree *tree, void **data_out, size_t *len_out) {
     return 0;
 }
 
-// ─── COMMIT #2 IMPLEMENTATION ───────────────────────────────────────────────
+// ─── COMMIT #3 IMPLEMENTATION ───────────────────────────────────────────────
 
 int tree_from_index(ObjectID *id_out) {
     Index idx;
@@ -105,7 +105,7 @@ int tree_from_index(ObjectID *id_out) {
     Tree tree;
     tree.count = 0;
 
-    // Step 2: populate tree entries (flat structure)
+    // Step 2: populate entries
     for (int i = 0; i < idx.count; i++) {
         if (tree.count >= MAX_TREE_ENTRIES) return -1;
 
@@ -115,12 +115,23 @@ int tree_from_index(ObjectID *id_out) {
         e->name[sizeof(e->name) - 1] = '\0';
 
         e->mode = MODE_FILE;
-
         e->hash = idx.entries[i].hash;
 
         tree.count++;
     }
 
-    (void)id_out;
-    return 0;
+    // Step 3: serialize tree
+    void *data;
+    size_t len;
+
+    if (tree_serialize(&tree, &data, &len) != 0) {
+        return -1;
+    }
+
+    // Step 4: write tree object
+    int rc = object_write(OBJ_TREE, data, len, id_out);
+
+    free(data);
+
+    return rc;
 }
